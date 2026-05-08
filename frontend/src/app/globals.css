@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* Definimos la identidad de NEXU para v4 basado en Figma */
+@theme {
+  /* Colores según nexu.md spec */
+  --color-brand-red: #F2393B;        /* Rojo Cian - CTA/Accents */
+  --color-brand-navy: #212D77;       /* Azul Profundo - Títulos */
+  --color-brand-text: #000000;       /* Negro Puro - Cuerpo de texto */
+  --color-brand-bg: #FFFFFF;         /* Blanco Limpio - Fondo */
+
+  /* Colores neutros complementarios */
+  --color-brand-gray: #F5F6F8;       /* Gris claro */
+  --color-brand-dark: #0A0A0B;       /* Gris oscuro */
+
+  /* Mantener colores anteriores por compatibilidad */
+  --color-brand-cyan: #00E5FF;
+  --color-nexu-red: #F2393B;
+  --color-nexu-cyan: #00E5FF;
+  --color-nexu-dark: #0A0A0B;
+  --color-nexu-gray: #1C1C1E;
+  --color-brand-coral: #F2393B;      /* Alias para compatibilidad */
+
+  /* Fuentes principales */
+  --font-poppins: var(--font-poppins), sans-serif;
+  --font-roboto: var(--font-roboto), sans-serif;
+
+  /* Tamaños de texto (H1, Body, Caption) */
+  --text-h1: 2rem;
+  --text-h1-line-height: 2.5rem;
+  
+  --text-body: 1rem;
+  --text-body-line-height: 1.5rem;
+  
+  --text-caption: 0.75rem;
+  --text-caption-line-height: 1rem;
+
+  /* Animación neón para los botones del TFG */
+  --animate-neon-pulse: neon-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes neon-pulse {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 5px var(--color-brand-coral)); }
+  50% { opacity: 0.8; filter: drop-shadow(0 0 15px var(--color-brand-coral)); }
+}
+
+:root {
+  background-color: #ffffff;
+  color: var(--color-brand-navy);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-poppins), sans-serif;
+  background-color: #ffffff;
+  min-height: 100vh;
+}

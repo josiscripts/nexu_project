@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                  String          @id @default(uuid())
+  email               String          @unique
+  name                String
+  password            String
+  area                UnescoArea
+  createdAt           DateTime        @default(now())
+  posts               Post[]
+  comments            Comment[]
+  notifications       Notification[]
+  sentMessages        Message[]       @relation("sentMessages")
+  receivedMessages    Message[]       @relation("receivedMessages")
+  likes               Like[]
+  followers           UserFollower[]  @relation("followers")
+  following           UserFollower[]  @relation("following")
+  hostedRooms         Room[]
+  hostedGroups        Group[]         @relation("hostedGroups")
+  groupMemberships    GroupMember[]
+}
+
+model Post {
+  id            String          @id @default(uuid())
+  content       String
+  imageUrl      String?
+  category      PostCategory    @default(EDUCACION)
+  authorId      String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  author        User            @relation(fields: [authorId], references: [id])
+  notifications Notification[]
+  comments      Comment[]
+  likes         Like[]
+}
+
+model Notification {
+  id          String            @id @default(uuid())
+  type        NotificationType
+  message     String
+  read        Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  recipientId  String
+  recipient    User              @relation(fields: [recipientId], references: [id])
+  postId       String?
+  post         Post?             @relation(fields: [postId], references: [id])
+
+  @@index([recipientId])
+  @@index([recipientId, read])
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  content    String
+  senderId   String
+  receiverId String
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  sender     User     @relation("sentMessages", fields: [senderId], references: [id])
+  receiver   User     @relation("receivedMessages", fields: [receiverId], references: [id])
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([senderId, receiverId])
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  postId    String
+  authorId  String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@index([postId])
+  @@index([authorId])
+}
+
+enum UnescoArea {
+  SALUD
+  INGENIERIA
+  ARTES
+  CIENCIAS_EXACTAS
+  CIENCIAS_SOCIALES
+  NEGOCIOS
+  ARQUITECTURA_Y_URBANISMO
+}
+
+enum NotificationType {
+  POST_CREATED
+  POST_LIKED
+  COMMENT_ADDED
+  MENTION
+  SYSTEM
+}
+
+enum PostCategory {
+  EDUCACION
+  CIENCIAS_NATURALES
+  CIENCIAS_SOCIALES
+  CULTURA
+  COMUNICACION
+  INFORMATICA
+  MATEMATICAS
+  INGENIERIA
+  SALUD
+  ARTES
+}
+
+model UserFollower {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("following", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("followers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+}
+
+model Like {
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+}
+
+model Room {
+  id        String     @id @default(uuid())
+  name      String
+  area      UnescoArea
+  isActive  Boolean    @default(true)
+  hostId    String
+  createdAt DateTime   @default(now())
+  host      User       @relation(fields: [hostId], references: [id])
+}
+
+model Group {
+  id          String        @id @default(uuid())
+  name        String
+  description String?
+  area        UnescoArea
+  hostId      String
+  createdAt   DateTime      @default(now())
+  host        User          @relation("hostedGroups", fields: [hostId], references: [id])
+  members     GroupMember[]
+}
+
+model GroupMember {
+  userId    String
+  groupId   String
+  joinedAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+}

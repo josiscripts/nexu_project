@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { useRoomParticipants } from '@/hooks/useRoomParticipants';
 
 interface AudioRoomProps {
   roomId: string;
+  roomName?: string;
   onLeave?: () => void;
 }
 
@@ -13,9 +15,6 @@ interface RemoteAudioProps {
   stream: MediaStream;
 }
 
-/**
- * Componente para renderizar el audio de un usuario remoto
- */
 function RemoteAudio({ userId, stream }: RemoteAudioProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -42,41 +41,38 @@ function RemoteAudio({ userId, stream }: RemoteAudioProps) {
   );
 }
 
-/**
- * Componente principal de la sala de audio
- */
-export function AudioRoom({ roomId, onLeave }: AudioRoomProps) {
+export function AudioRoom({ roomId, roomName, onLeave }: AudioRoomProps) {
   const {
     isConnected,
-    localStream,
     isAudioEnabled,
     error,
     remoteStreams,
-    joinRoom,
+    requestMicrophone,
     leaveRoom,
-    toggleAudio,
   } = useWebRTC(roomId);
 
-  // Unirse a la sala cuando el componente se monta
-  useEffect(() => {
-    joinRoom();
+  // SUPABASE REALTIME: Lee participantes directamente de BD
+  const { participants, totalUsers, isLoading } = useRoomParticipants(roomId);
 
+  useEffect(() => {
     return () => {
       leaveRoom();
     };
-  }, [roomId]);
+  }, [leaveRoom]);
 
-  // Manejar leave
   const handleLeave = useCallback(() => {
     leaveRoom();
     onLeave?.();
   }, [leaveRoom, onLeave]);
 
-  if (error) {
+  if (error && error.includes('autenticación')) {
     return (
       <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded">
-        <p className="font-bold">Error de audio</p>
+        <p className="font-bold">Error de autenticación</p>
         <p>{error}</p>
+        <button onClick={() => window.location.reload()} className="mt-2 text-blue-600 underline">
+          Recargar página
+        </button>
       </div>
     );
   }
@@ -84,24 +80,23 @@ export function AudioRoom({ roomId, onLeave }: AudioRoomProps) {
   return (
     <div className="p-4 bg-gray-100 rounded-lg">
       <div className="mb-4">
-        <h2 className="text-lg font-semibold">Sala de Audio: {roomId}</h2>
+        <h2 className="text-lg font-semibold">Sala de Audio: {roomName || roomId}</h2>
         <p className="text-sm text-gray-600">
           Estado: {isConnected ? '🟢 Conectado' : '🔴 Desconectado'}
         </p>
       </div>
 
-      {/* Controles de audio */}
+      {/* Controles de audio - sin validación de socket */}
       <div className="flex gap-2 mb-4">
         <button
-          onClick={toggleAudio}
-          disabled={!localStream}
+          onClick={requestMicrophone}
           className={`px-4 py-2 rounded ${
             isAudioEnabled
               ? 'bg-green-500 hover:bg-green-600'
               : 'bg-red-500 hover:bg-red-600'
-          } text-white disabled:opacity-50`}
+          } text-white`}
         >
-          {isAudioEnabled ? '🎙️ Micrófono activo' : '🔇 Silenciado'}
+          {isAudioEnabled ? '🎙️ Micrófono activo' : '🎤 Activar micrófono'}
         </button>
 
         <button
@@ -112,28 +107,32 @@ export function AudioRoom({ roomId, onLeave }: AudioRoomProps) {
         </button>
       </div>
 
-      {/* Lista de usuarios remotos con audio */}
+      {/* Lista de participantes desde SUPABASE REALTIME */}
       <div className="mb-4">
         <h3 className="text-md font-medium mb-2">
-          Usuarios en la sala ({remoteStreams.size})
+          Usuarios en la sala ({isLoading ? '...' : totalUsers})
         </h3>
-        {remoteStreams.size === 0 ? (
-          <p className="text-gray-500 text-sm">No hay otros usuarios en la sala</p>
+
+        {isLoading ? (
+          <p className="text-gray-500 text-sm">Cargando participantes...</p>
+        ) : totalUsers === 0 ? (
+          <p className="text-gray-500 text-sm">No hay usuarios en la sala</p>
         ) : (
-          <ul className="space-y-2">
-            {Array.from(remoteStreams.entries()).map(([userId, stream]) => (
-              <li key={userId} className="flex items-center gap-2">
-                <span className="text-sm">👤 Usuario {userId.slice(0, 8)}...</span>
-                <span className="text-xs text-green-600">🔊 Escuchando</span>
-                {/* Elemento de audio oculto para este usuario */}
-                <RemoteAudio userId={userId} stream={stream} />
+          <ul className="space-y-1">
+            {participants.map((participant) => (
+              <li key={participant.userId} className="flex items-center gap-2 text-sm">
+                <span>👤</span>
+                <span className="text-gray-700">{participant.userId.slice(0, 8)}...</span>
+                {remoteStreams.has(participant.userId) && (
+                  <span className="text-xs text-green-600">🔊 Escuchando</span>
+                )}
               </li>
             ))}
           </ul>
         )}
       </div>
 
-      {/* Elementos de audio ocultos para cada stream remoto */}
+      {/* Elementos de audio ocultos */}
       <div className="hidden">
         {Array.from(remoteStreams.entries()).map(([userId, stream]) => (
           <RemoteAudio key={userId} userId={userId} stream={stream} />

@@ -33,7 +33,7 @@ interface SocketContextType {
 
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export function SocketProvider({ children }: { children: ReactNode }) {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -93,7 +93,14 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   }, [socket, isConnected]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      console.log('❌ [Socket] No token disponible en useAuthStore');
+      return;
+    }
+
+    console.log(`📍 [Socket] Intentando conectar a ${SOCKET_URL}/notifications`);
+    console.log('[Socket] Token disponible:', token.substring(0, 30) + '...');
+    console.log('[Socket] Token completo:', token); // DEBUG
 
     const socketInstance = io(`${SOCKET_URL}/notifications`, {
       auth: {
@@ -103,10 +110,12 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     socketInstance.on('connect', () => {
-      console.log('[Socket] Connected to notification namespace');
+      console.log('✅ [Socket] Conectado a namespace /notifications');
+      console.log('[Socket] Socket ID:', socketInstance.id);
       setIsConnected(true);
 
       // Auto-join user's area room if available
@@ -117,12 +126,13 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     });
 
     socketInstance.on('disconnect', (reason) => {
-      console.log('[Socket] Disconnected:', reason);
+      console.log('❌ [Socket] Desconectado:', reason);
       setIsConnected(false);
     });
 
     socketInstance.on('connect_error', (error) => {
-      console.error('[Socket] Connection error:', error.message);
+      console.error('❌ [Socket] Error de conexión:', error.message);
+      console.error('[Socket] Detalles del error:', error);
       setIsConnected(false);
     });
 

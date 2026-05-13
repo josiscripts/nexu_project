@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
@@ -23,71 +23,57 @@ export interface WebRTCSignal {
 export function useWebRTC(roomId?: string) {
   const { token, user } = useAuthStore();
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [totalUsers, setTotalUsers] = useState(0);
   const roomSocket = useRef<Socket | null>(null);
   const audioTrackRef = useRef<MediaStreamTrack | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const shouldReconnectRef = useRef(true);
 
-  // Create a peer connection for a target user
   const createPeerConnection = useCallback((targetUserId: string): RTCPeerConnection | null => {
-    if (!localStream) {
-      console.error('❌ No hay localStream para crear peer connection');
-      return null;
-    }
+    if (!localStream) return null;
 
     if (peerConnectionsRef.current.has(targetUserId)) {
-      console.log('[WebRTC] Peer connection ya existe para:', targetUserId);
       return peerConnectionsRef.current.get(targetUserId)!;
     }
 
-    console.log('[WebRTC] Creando peer connection para:', targetUserId);
-
     const pc = new RTCPeerConnection(RTC_CONFIG);
 
-    // Add local audio track to the connection
     localStream.getTracks().forEach((track) => {
       pc.addTrack(track, localStream);
-      console.log('[WebRTC] Track añadido:', track.kind);
     });
 
-    // Handle ICE candidates
     pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        console.log('[WebRTC] ICE candidate generado:', event.candidate.type);
-        if (roomSocket.current) {
-          roomSocket.current.emit('webrtc:ice-candidate', {
-            targetUserId,
-            candidate: event.candidate,
-          });
-        }
-      } else {
-        console.log('[WebRTC] ICE candidates completados');
+      if (event.candidate && roomSocket.current) {
+        roomSocket.current.emit('webrtc:ice-candidate', {
+          targetUserId,
+          candidate: event.candidate,
+        });
       }
     };
 
-    // Handle receiving remote tracks
     pc.ontrack = (event) => {
-      console.log('🔊 Recibiendo audio de:', targetUserId);
-
       const remoteStream = event.streams[0];
       setRemoteStreams((prev) => new Map(prev).set(targetUserId, remoteStream));
-    };
-
-    // Handle connection state changes
-    pc.onconnectionstatechange = () => {
-      console.log(`[WebRTC] Estado conexión con ${targetUserId}:`, pc.connectionState);
     };
 
     peerConnectionsRef.current.set(targetUserId, pc);
     return pc;
   }, [localStream]);
 
-  // Initialize room socket connection
+  // Inicializar socket SOLO si token existe
   useEffect(() => {
-    if (!token) return;
+    // REGLA #1: NO iniciar socket sin token
+    if (!token) {
+      console.log('⏸️ [WebRTC] Socket en pausa - esperando token...');
+      setIsConnected(false);
+      return;
+    }
+
+    console.log(`TOKEN ENVIADO AL SOCKET: ${token.substring(0, 5)}...`);
 
     const socketInstance = io(`${SOCKET_URL}/rooms`, {
       auth: {
@@ -95,89 +81,46 @@ export function useWebRTC(roomId?: string) {
       },
       transports: ['websocket', 'polling'],
       reconnection: true,
+      reconnectionAttempts: 3,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 5000,
     });
 
     roomSocket.current = socketInstance;
 
     socketInstance.on('connect', () => {
-      console.log('[WebRTC] Connected to rooms namespace');
+      console.log('✅ [WebRTC] Socket CONECTADO');
       setIsConnected(true);
+      shouldReconnectRef.current = true;
+      setError(null);
     });
 
-    socketInstance.on('disconnect', () => {
-      console.log('[WebRTC] Disconnected from rooms namespace');
+    socketInstance.on('disconnect', (reason) => {
+      console.log(`❌ [WebRTC] Desconectado: ${reason}`);
       setIsConnected(false);
     });
 
-    // Handle incoming WebRTC offer
-    socketInstance.on('webrtc:offer', async (signal: WebRTCSignal) => {
-      console.log('📡 Señal recibida:', 'offer', signal);
+    socketInstance.on('connect_error', (error: any) => {
+      console.error(`❌ [WebRTC] Error: ${error.message}`);
 
-      if (!user || !localStream) return;
-
-      const { fromUserId, offer } = signal;
-
-      // Create peer connection
-      const pc = createPeerConnection(fromUserId);
-      if (!pc) return;
-
-      // Set remote description
-      await pc.setRemoteDescription(new RTCSessionDescription(offer!));
-
-      // Create and send answer
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      socketInstance.emit('webrtc:answer', {
-        targetUserId: fromUserId,
-        answer,
-      });
-
-      console.log(`📡 Answer enviado a ${fromUserId}`);
-    });
-
-    // Handle incoming WebRTC answer
-    socketInstance.on('webrtc:answer', async (signal: WebRTCSignal) => {
-      console.log('📡 Señal recibida:', 'answer', signal);
-
-      const { fromUserId, answer } = signal;
-      const pc = peerConnectionsRef.current.get(fromUserId);
-
-      if (pc && answer) {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        console.log(`Remote description set para ${fromUserId}`);
+      // REGLA #2: Si es Unauthorized, DETENER reconexión
+      if (error.message.includes('Unauthorized') || error.message.includes('Token')) {
+        console.error('🛑 [WebRTC] ERROR DE AUTENTICACIÓN - Deteniendo reconexiones');
+        shouldReconnectRef.current = false;
+        socketInstance.disconnect();
+        setError('❌ Error de autenticación. Por favor, recarga la página.');
+        setIsConnected(false);
+      } else {
+        setError(`Error: ${error.message}`);
       }
     });
 
-    // Handle incoming ICE candidate
-    socketInstance.on('webrtc:ice-candidate', async (signal: WebRTCSignal) => {
-      console.log('📡 Señal recibida:', 'ice-candidate', signal);
-
-      const { fromUserId, candidate } = signal;
-      const pc = peerConnectionsRef.current.get(fromUserId);
-
-      if (pc && candidate) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          console.log(`ICE candidate añadido de ${fromUserId}`);
-        } catch (err) {
-          console.error('Error al añadir ICE candidate:', err);
-        }
-      }
-    });
-
-    // Handle user joined room
     socketInstance.on('user-joined', (data: { userId: string; email: string; name: string }) => {
-      console.log('[WebRTC] Usuario entró a la sala:', data);
-
-      // Only create peer connection if we have local stream and it's not ourselves
       if (!localStream || data.userId === user?.id) return;
 
-      // Create peer connection and send offer
       const pc = createPeerConnection(data.userId);
       if (!pc) return;
 
-      // Store pending offer
       pc.createOffer()
         .then((offer) => pc.setLocalDescription(offer))
         .then(() => {
@@ -185,23 +128,16 @@ export function useWebRTC(roomId?: string) {
             targetUserId: data.userId,
             offer: pc.localDescription,
           });
-          console.log(`📡 Offer enviado a ${data.userId}`);
         })
-        .catch((err) => console.error('Error creando offer:', err));
+        .catch((err) => console.error('Error:', err));
     });
 
-    // Handle user left room
-    socketInstance.on('user-left', (data: { userId: string; email: string; name: string }) => {
-      console.log('[WebRTC] Usuario salió de la sala:', data);
-
-      // Clean up peer connection for this user
+    socketInstance.on('user-left', (data: { userId: string }) => {
       const pc = peerConnectionsRef.current.get(data.userId);
       if (pc) {
         pc.close();
         peerConnectionsRef.current.delete(data.userId);
       }
-
-      // Clean up remote stream
       setRemoteStreams((prev) => {
         const next = new Map(prev);
         next.delete(data.userId);
@@ -209,22 +145,69 @@ export function useWebRTC(roomId?: string) {
       });
     });
 
+    socketInstance.on('webrtc:offer', async (signal: WebRTCSignal) => {
+      if (!user || !localStream) return;
+
+      const { fromUserId, offer } = signal;
+      const pc = createPeerConnection(fromUserId);
+      if (!pc) return;
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offer!));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socketInstance.emit('webrtc:answer', {
+        targetUserId: fromUserId,
+        answer,
+      });
+    });
+
+    socketInstance.on('webrtc:answer', async (signal: WebRTCSignal) => {
+      const { fromUserId, answer } = signal;
+      const pc = peerConnectionsRef.current.get(fromUserId);
+
+      if (pc && answer) {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      }
+    });
+
+    socketInstance.on('webrtc:ice-candidate', async (signal: WebRTCSignal) => {
+      const { fromUserId, candidate } = signal;
+      const pc = peerConnectionsRef.current.get(fromUserId);
+
+      if (pc && candidate) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.error('Error ICE:', err);
+        }
+      }
+    });
+
+    // REGLA #3: Contar usuarios directamente desde BD
+    socketInstance.on('room_users_update', (data: { totalUsers: number }) => {
+      console.log(`👥 Usuarios en sala: ${data.totalUsers}`);
+      setTotalUsers(data.totalUsers);
+    });
+
     return () => {
-      socketInstance.disconnect();
+      if (shouldReconnectRef.current) {
+        socketInstance.disconnect();
+      }
       roomSocket.current = null;
     };
   }, [token, user?.id, localStream, createPeerConnection]);
 
-  /**
-   * Join a room and request microphone access
-   */
-  const joinRoom = useCallback(async () => {
-    if (!roomId || !roomSocket.current) {
-      console.error('❌ No hay roomSocket o roomId disponible');
+  // REGLA #4: Pedir micrófono INSTANTÁNEO al clic
+  const requestMicrophone = useCallback(async () => {
+    if (localStream) {
+      // Ya tenemos stream
+      toggleAudio();
       return;
     }
 
     try {
+      console.log('🎤 Pidiendo permiso de micrófono...');
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: false,
@@ -235,62 +218,71 @@ export function useWebRTC(roomId?: string) {
       setIsAudioEnabled(true);
       setError(null);
 
-      // Join the room via WebSocket
-      roomSocket.current.emit('join-room', { roomId });
+      console.log('✅ Micrófono activado');
 
-      console.log('🎙️ Micrófono accedido con éxito');
-    } catch (err) {
-      console.error('❌ Error al acceder al micrófono:', err);
-      setError('No se pudo acceder al micrófono');
+      // Unirse a la sala CON el stream
+      if (roomSocket.current && roomSocket.current.connected) {
+        roomSocket.current.emit('join-room', { roomId });
+      }
+    } catch (err: any) {
+      console.error('❌ Permiso denegado:', err.message);
+      setError(`Permiso de micrófono: ${err.message}`);
     }
-  }, [roomId]);
+  }, [localStream, roomId]);
 
-  /**
-   * Leave the current room and clean up media stream
-   */
-  const leaveRoom = useCallback(() => {
-    if (roomId && roomSocket.current) {
+  const toggleAudio = useCallback(() => {
+    if (!audioTrackRef.current) return;
+    audioTrackRef.current.enabled = !audioTrackRef.current.enabled;
+    setIsAudioEnabled(audioTrackRef.current.enabled);
+  }, []);
+
+  const leaveRoom = useCallback(async () => {
+    // Eliminar participante de la BD
+    if (roomId && user?.id) {
+      try {
+        const { error } = await (async () => {
+          const response = await fetch(`${SOCKET_URL}/rooms/${roomId}/leave`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userId: user.id }),
+          });
+
+          if (!response.ok) {
+            return { error: await response.text() };
+          }
+          return { error: null };
+        })();
+
+        if (!error) {
+          console.log(`✅ [WebRTC] Participante eliminado de BD`);
+        }
+      } catch (err) {
+        console.error('Error eliminando participante:', err);
+      }
+    }
+
+    // Cerrar socket
+    if (roomId && roomSocket.current && roomSocket.current.connected) {
       roomSocket.current.emit('leave-room', { roomId });
     }
 
+    // Limpiar audio
     if (localStream) {
       localStream.getTracks().forEach((track) => track.stop());
       setLocalStream(null);
       audioTrackRef.current = null;
-      setIsAudioEnabled(true);
+      setIsAudioEnabled(false);
     }
 
-    // Close all peer connections
+    // Cerrar peer connections
     peerConnectionsRef.current.forEach((pc) => pc.close());
     peerConnectionsRef.current.clear();
-
-    // Clear remote streams
     setRemoteStreams(new Map());
+  }, [roomId, user?.id, token, localStream]);
 
-    console.log('🎙️ Sala abandonada, micrófono liberado');
-  }, [roomId, localStream]);
-
-  /**
-   * Toggle audio track (mute/unmute)
-   */
-  const toggleAudio = useCallback(() => {
-    const audioTrack = audioTrackRef.current;
-    if (!audioTrack) return;
-
-    audioTrack.enabled = !audioTrack.enabled;
-    setIsAudioEnabled(audioTrack.enabled);
-
-    console.log(`🎙️ Micrófono ${audioTrack.enabled ? 'activado' : 'silenciado'}`);
-  }, []);
-
-  /**
-   * Toggle video track (placeholder for future video support)
-   */
-  const toggleVideo = useCallback(() => {
-    console.log('📹 Video toggle - no implementado aún');
-  }, []);
-
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (localStream) {
@@ -306,10 +298,9 @@ export function useWebRTC(roomId?: string) {
     isAudioEnabled,
     error,
     remoteStreams,
-    peerConnections: peerConnectionsRef.current,
-    joinRoom,
+    totalUsers,
+    requestMicrophone,
     leaveRoom,
     toggleAudio,
-    toggleVideo,
   };
 }

@@ -16,7 +16,7 @@ import { WebsocketGateway } from '../websocket/websocket.gateway';
 
 @WebSocketGateway({
   cors: {
-    origin: 'http://localhost:3001',
+    origin: true,
     credentials: true,
   },
   namespace: '/rooms',
@@ -35,14 +35,20 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleConnection(client: Socket): Promise<void> {
     const user = client.data.user;
     if (!user) {
+      console.error('❌ [RoomsGateway] Sin usuario en conexión');
       client.disconnect(true);
       return;
     }
 
+    // IMPORTANTE: Registrar userId en el socket para señalización WebRTC
+    client.data.userId = user.userId;
+    client.data.userEmail = user.email;
+    client.data.userName = user.name;
+
     // Join personal room for WebRTC signaling to work
     client.join(`user:${user.userId}`);
 
-    console.log(`🎙️ Room connection: ${user.email} (${client.id})`);
+    console.log(`✅ [RoomsGateway] Conexión exitosa: ${user.email} (Socket: ${client.id}, UserId: ${user.userId})`);
   }
 
   async handleDisconnect(client: Socket): Promise<void> {
@@ -73,60 +79,86 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { roomId: string },
   ): Promise<void> {
     const user = client.data.user;
-    if (!user) return;
+    if (!user) {
+      console.error('❌ [RoomsGateway] Usuario no encontrado en socket');
+      return;
+    }
 
     const { roomId } = data;
 
-    // Join the Socket.io room
-    client.join(roomId);
+    try {
+      // Join the Socket.io room
+      client.join(roomId);
 
-    // Add user to room in service
-    const room = this.roomsService.addUserToRoom(roomId, {
-      userId: user.userId,
-      email: user.email,
-      name: user.name,
-      socketId: client.id,
-      joinedAt: new Date(),
-    });
-
-    // Get other users in the room
-    const otherUsers = Array.from(room.users.values())
-      .filter((u) => u.userId !== user.userId)
-      .map((u) => ({
-        userId: u.userId,
-        email: u.email,
-        name: u.name,
-      }));
-
-    // Send confirmation to the user who joined
-    client.emit('room-joined', {
-      roomId,
-      users: otherUsers,
-    });
-
-    // Notify others in the room that a new user joined
-    client.to(roomId).emit('user-joined', {
-      userId: user.userId,
-      email: user.email,
-      name: user.name,
-      roomId,
-    });
-
-    // Get room info from DB to get area
-    const dbRoom = await this.prisma.room.findUnique({
-      where: { id: roomId },
-    });
-
-    if (dbRoom) {
-      this.websocketGateway.emitToArea(dbRoom.area, 'room:user-joined', {
-        roomId,
-        roomName: dbRoom.name,
+      // Add user to room in service (now async)
+      const room = await this.roomsService.addUserToRoom(roomId, {
         userId: user.userId,
-        userCount: room.users.size,
+        email: user.email,
+        name: user.name,
+        socketId: client.id,
+        joinedAt: new Date(),
       });
-    }
 
-    console.log(`🎙️ ${user.email} joined room: ${roomId}`);
+      console.log(`✅ [RoomsGateway] ${user.email} se unió a sala ${roomId}`);
+
+      // Get other users in the room
+      const otherUsers = Array.from(room.users.values())
+        .filter((u) => u.userId !== user.userId)
+        .map((u) => ({
+          userId: u.userId,
+          email: u.email,
+          name: u.name,
+        }));
+
+      // Send confirmation to the user who joined
+      client.emit('room-joined', {
+        roomId,
+        users: otherUsers,
+      });
+
+      // Notify others in the room that a new user joined
+      client.to(roomId).emit('user-joined', {
+        userId: user.userId,
+        email: user.email,
+        name: user.name,
+        roomId,
+      });
+
+      // Contar usuarios directamente desde BD (infalible)
+      try {
+        const participantCount = await this.prisma.roomParticipant.count({
+          where: { roomId },
+        });
+
+        this.server.to(roomId).emit('room_users_update', {
+          roomId,
+          totalUsers: participantCount,
+        });
+
+        console.log(`📊 [RoomsGateway] Sala ${roomId} tiene ${participantCount} participantes (desde BD)`);
+      } catch (error) {
+        console.error('Error contando participantes:', error);
+      }
+
+      // Get room info from DB to get area
+      const dbRoom = await this.prisma.room.findUnique({
+        where: { id: roomId },
+      });
+
+      if (dbRoom) {
+        this.websocketGateway.emitToArea(dbRoom.area, 'room:user-joined', {
+          roomId,
+          roomName: dbRoom.name,
+          userId: user.userId,
+          userCount: room.users.size,
+        });
+      }
+
+      console.log(`🎙️ ${user.email} joined room: ${roomId} (Total users: ${room.users.size})`);
+    } catch (error) {
+      console.error(`❌ Error en handleJoinRoom:`, error);
+      client.emit('error', { message: 'Error al unirse a la sala' });
+    }
   }
 
   @SubscribeMessage('leave-room')
@@ -161,11 +193,27 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Send confirmation to the user who left
     client.emit('room-left', { roomId });
 
+    // Get updated room user count
+    const room = this.roomsService.getRoom(roomId);
+    const userCount = room?.users.size ?? 0;
+
+    // Emit room user count update to everyone remaining in the room
+    if (userCount > 0) {
+      const allUsersInRoom = Array.from(room!.users.values()).map((u) => ({
+        userId: u.userId,
+        name: u.name,
+        email: u.email,
+      }));
+
+      this.server.to(roomId).emit('room_users_update', {
+        roomId,
+        totalUsers: userCount,
+        users: allUsersInRoom,
+      });
+    }
+
     // Emit area event
     if (dbRoom) {
-      const room = this.roomsService.getRoom(roomId);
-      const userCount = room?.users.size ?? 0;
-
       if (userCount === 0) {
         this.websocketGateway.emitToArea(dbRoom.area, 'room:destroyed', {
           roomId,
@@ -181,7 +229,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
     }
 
-    console.log(`🎙️ ${user.email} left room: ${roomId}`);
+    console.log(`🎙️ ${user.email} left room: ${roomId} (Remaining users: ${userCount})`);
   }
 
   @SubscribeMessage('get-room-users')

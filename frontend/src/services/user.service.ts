@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export interface UserProfile {
   id: string;
@@ -151,6 +151,47 @@ export async function getRooms(token: string): Promise<RoomInfo[]> {
 
   if (!response.ok) {
     throw new Error('Error al cargar salas');
+  }
+
+  return response.json();
+}
+
+export async function getMyRooms(token: string): Promise<RoomInfo[]> {
+  const response = await fetch(`${API_URL}/rooms/my-rooms`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error('Error al cargar mis salas');
+  }
+
+  return response.json();
+}
+
+export async function joinRoom(roomId: string, token: string): Promise<RoomInfo> {
+  const response = await fetch(`${API_URL}/rooms/${roomId}/join`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error('Error al unirse a la sala');
+  }
+
+  return response.json();
+}
+
+export async function deleteRoom(roomId: string, token: string): Promise<{ success: boolean }> {
+  const response = await fetch(`${API_URL}/rooms/${roomId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error('Error al eliminar la sala');
   }
 
   return response.json();

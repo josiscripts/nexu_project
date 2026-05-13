@@ -24,6 +24,7 @@ model User {
   hostedRooms         Room[]
   hostedGroups        Group[]         @relation("hostedGroups")
   groupMemberships    GroupMember[]
+  roomParticipations  RoomParticipant[]
 }
 
 model Post {
@@ -135,13 +136,24 @@ model Like {
 }
 
 model Room {
-  id        String     @id @default(uuid())
-  name      String
-  area      UnescoArea
-  isActive  Boolean    @default(true)
-  hostId    String
-  createdAt DateTime   @default(now())
-  host      User       @relation(fields: [hostId], references: [id])
+  id           String             @id @default(uuid())
+  name         String
+  area         UnescoArea
+  isActive     Boolean            @default(true)
+  hostId       String
+  createdAt    DateTime           @default(now())
+  host         User               @relation(fields: [hostId], references: [id])
+  participants RoomParticipant[]
+}
+
+model RoomParticipant {
+  userId    String
+  roomId    String
+  joinedAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roomId])
 }
 
 model Group {

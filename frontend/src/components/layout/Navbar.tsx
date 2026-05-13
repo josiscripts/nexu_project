@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { LogOut, User } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useSocket } from '@/contexts/SocketContext';
+import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useNotifications } from '@/hooks/useNotifications';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';
 import NexuButton from '@/components/ui/NexuButton';
@@ -16,7 +17,7 @@ interface NavbarProps {
 
 export default function Navbar({ className }: NavbarProps) {
   const { user, logout } = useAuthStore();
-  const { isConnected } = useSocket();
+  const { isOverallConnected } = useConnectionStatus();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const router = useRouter();
@@ -65,18 +66,18 @@ export default function Navbar({ className }: NavbarProps) {
           <div
             className={cn(
               'hidden sm:flex items-center gap-2 text-xs',
-              isConnected ? 'text-green-500' : 'text-brand-navy/50'
+              isOverallConnected ? 'text-green-500' : 'text-brand-navy/50'
             )}
           >
             <span
               className={cn(
                 'w-2 h-2 rounded-full',
-                isConnected
+                isOverallConnected
                   ? 'bg-green-500 shadow-[0_0_8px_rgba(34,184,207,0.6)]'
                   : 'bg-brand-navy/30'
               )}
             />
-            {isConnected ? 'Conectado' : 'Desconectado'}
+            {isOverallConnected ? 'Conectado' : 'Desconectado'}
           </div>
 
           {/* Notification Bell */}

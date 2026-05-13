@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Poppins, Roboto } from "next/font/google";
 import { SocketProvider } from "@/contexts/SocketContext";
-import { BottomNav } from "@/components/layout/BottomNav";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -31,10 +30,9 @@ export default function RootLayout({
       lang="es"
       className={`${poppins.variable} ${roboto.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-brand-gray pb-24">
+      <body className="min-h-full flex flex-col bg-brand-gray" suppressHydrationWarning>
         <SocketProvider>
           {children}
-          <BottomNav />
         </SocketProvider>
       </body>
     </html>

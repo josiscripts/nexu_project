@@ -14,7 +14,7 @@ import { ChatService } from './chat.service';
 
 @WebSocketGateway({
   cors: {
-    origin: 'http://localhost:3001',
+    origin: true,
     credentials: true,
   },
   namespace: '/chat',
@@ -26,7 +26,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private connectedUsers: Map<string, Set<string>> = new Map();
 
-  constructor(private chatService: ChatService) {}
+  constructor(private chatService: ChatService) { }
 
   async handleConnection(client: Socket): Promise<void> {
     try {

@@ -225,35 +225,39 @@ export class PostService {
    * Toggle like on a post
    */
   async toggleLike(postId: string, userId: string): Promise<{ liked: boolean }> {
-    const existing = await this.prisma.like.findUnique({
-      where: { userId_postId: { userId, postId } }
-    });
-
-    if (existing) {
-      await this.prisma.like.delete({
+    try {
+      const existing = await this.prisma.like.findUnique({
         where: { userId_postId: { userId, postId } }
       });
-      return { liked: false };
-    }
 
-    await this.prisma.like.create({
-      data: { userId, postId }
-    });
+      if (existing) {
+        await this.prisma.like.delete({
+          where: { userId_postId: { userId, postId } }
+        });
+        return { liked: false };
+      }
 
-    // Notify post author about the like
-    const post = await this.prisma.post.findUnique({
-      where: { id: postId },
-      select: { authorId: true }
-    });
-
-    if (post && post.authorId !== userId) {
-      this.websocketGateway.emitToUser(post.authorId, 'post:liked', {
-        postId,
-        userId
+      await this.prisma.like.create({
+        data: { userId, postId }
       });
-    }
 
-    return { liked: true };
+      const post = await this.prisma.post.findUnique({
+        where: { id: postId },
+        select: { authorId: true }
+      });
+
+      if (post && post.authorId !== userId) {
+        this.websocketGateway.emitToUser(post.authorId, 'post:liked', {
+          postId,
+          userId
+        });
+      }
+
+      return { liked: true };
+    } catch (error) {
+      console.error('❌ Error en toggleLike:', error);
+      throw new Error('No se pudo guardar el like');
+    }
   }
 
   /**

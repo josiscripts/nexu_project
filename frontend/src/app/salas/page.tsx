@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useSocket } from '@/contexts/SocketContext';
-import { getRooms, createRoom } from '@/services/user.service';
+import { getMyRooms, createRoom, deleteRoom } from '@/services/user.service';
 import type { RoomInfo } from '@/services/user.service';
 import Navbar from '@/components/layout/Navbar';
 import AudioRoom from '@/components/audio/AudioRoom';
-import { Loader2, Plus, Radio } from 'lucide-react';
+import { Loader2, Plus, Radio, Trash2 } from 'lucide-react';
 
 const UNESCO_AREAS = [
   'SALUD',
@@ -19,10 +20,15 @@ const UNESCO_AREAS = [
   'ARQUITECTURA_Y_URBANISMO',
 ] as const;
 
+interface RoomWithCreator extends RoomInfo {
+  isCreator?: boolean;
+}
+
 export default function SalasPage() {
-  const { token } = useAuthStore();
+  const searchParams = useSearchParams();
+  const { token, user } = useAuthStore();
   const { socket } = useSocket();
-  const [rooms, setRooms] = useState<RoomInfo[]>([]);
+  const [myRooms, setMyRooms] = useState<RoomWithCreator[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -30,43 +36,67 @@ export default function SalasPage() {
   const [area, setArea] = useState<(typeof UNESCO_AREAS)[number]>('INGENIERIA');
   const [error, setError] = useState<string | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
+  const [selectedRoomName, setSelectedRoomName] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const loadRooms = async () => {
+  const loadMyRooms = useCallback(async () => {
     if (!token) return;
     setIsLoading(true);
     try {
-      const data = await getRooms(token);
-      setRooms(data.filter(r => r.userCount > 0));
+      const data = await getMyRooms(token);
+      // Add isCreator field based on hostId
+      const roomsWithCreator = data.map(room => ({
+        ...room,
+        isCreator: (room as any).hostId === user?.id,
+      }));
+      setMyRooms(roomsWithCreator);
     } catch (err) {
-      console.error('Error loading rooms:', err);
+      console.error('Error loading my rooms:', err);
+      setError('Error al cargar salas');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [token, user?.id]);
 
   useEffect(() => {
-    loadRooms();
-    const interval = setInterval(loadRooms, 5000);
+    loadMyRooms();
+    const interval = setInterval(loadMyRooms, 5000);
     return () => clearInterval(interval);
-  }, [token]);
+  }, [loadMyRooms]);
 
   useEffect(() => {
     if (!socket) return;
 
     const handleRoomUpdate = () => {
-      loadRooms();
+      loadMyRooms();
     };
 
     socket.on('room:user-joined', handleRoomUpdate);
     socket.on('room:user-left', handleRoomUpdate);
     socket.on('room:destroyed', handleRoomUpdate);
+    socket.on('room:created', handleRoomUpdate);
+    socket.on('room:list-update', handleRoomUpdate);
 
     return () => {
       socket.off('room:user-joined', handleRoomUpdate);
       socket.off('room:user-left', handleRoomUpdate);
       socket.off('room:destroyed', handleRoomUpdate);
+      socket.off('room:created', handleRoomUpdate);
+      socket.off('room:list-update', handleRoomUpdate);
     };
-  }, [socket]);
+  }, [socket, loadMyRooms]);
+
+  // Handle ?selected parameter from Explore page
+  useEffect(() => {
+    const selectedParam = searchParams.get('selected');
+    if (selectedParam && myRooms.length > 0) {
+      const room = myRooms.find(r => r.id === selectedParam);
+      if (room) {
+        setSelectedRoom(room.id);
+        setSelectedRoomName(room.name);
+      }
+    }
+  }, [searchParams, myRooms]);
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,11 +108,12 @@ export default function SalasPage() {
     try {
       const newRoom = await createRoom({ name, area }, token);
       setSelectedRoom(newRoom.id);
+      setSelectedRoomName(newRoom.name);
       setName('');
       setArea('INGENIERIA');
       setShowForm(false);
       alert('Sala creada exitosamente');
-      await loadRooms();
+      await loadMyRooms();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Error al crear sala';
       setError(errorMsg);
@@ -90,24 +121,64 @@ export default function SalasPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }
+  };
 
-  const handleJoinRoom = (roomId: string) => {
+  const handleJoinRoom = (roomId: string, roomName: string) => {
     setSelectedRoom(roomId);
+    setSelectedRoomName(roomName);
+  };
+
+  const handleDeleteRoom = async (roomId: string, roomName: string) => {
+    if (!token) return;
+
+    const confirmed = window.confirm(
+      `¿Estás seguro de que quieres eliminar permanentemente la sala "${roomName}"? Esta acción no se puede deshacer.`
+    );
+
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteRoom(roomId, token);
+      alert('Sala eliminada correctamente');
+      setSelectedRoom(null);
+      await loadMyRooms();
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Error al eliminar sala';
+      alert(errorMsg);
+      console.error('Delete room error:', err);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   if (selectedRoom) {
+    const currentRoom = myRooms.find(r => r.id === selectedRoom);
+    const isRoomCreator = currentRoom?.isCreator;
+
     return (
       <div className="min-h-screen bg-white">
         <Navbar />
         <main className="p-4 sm:p-6 lg:p-8">
-          <button
-            onClick={() => setSelectedRoom(null)}
-            className="mb-4 px-4 py-2 bg-gray-300 text-brand-navy rounded-lg font-bold hover:bg-gray-400 transition"
-          >
-            ← Volver
-          </button>
-          <AudioRoom roomId={selectedRoom} onLeave={() => setSelectedRoom(null)} />
+          <div className="flex justify-between items-center mb-4">
+            <button
+              onClick={() => setSelectedRoom(null)}
+              className="px-4 py-2 bg-gray-300 text-brand-navy rounded-lg font-bold hover:bg-gray-400 transition"
+            >
+              ← Volver
+            </button>
+            {isRoomCreator && (
+              <button
+                onClick={() => handleDeleteRoom(selectedRoom, selectedRoomName || 'Sala')}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition flex items-center gap-2 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                Eliminar Sala
+              </button>
+            )}
+          </div>
+          <AudioRoom roomId={selectedRoom} roomName={selectedRoomName || 'Sala'} onLeave={() => setSelectedRoom(null)} />
         </main>
       </div>
     );
@@ -194,25 +265,32 @@ export default function SalasPage() {
             </form>
           )}
 
-          {/* Lista de salas activas */}
+          {/* Lista de mis salas */}
           {isLoading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="w-8 h-8 text-brand-red animate-spin" />
             </div>
-          ) : rooms.length > 0 ? (
+          ) : myRooms.length > 0 ? (
             <div className="space-y-4">
-              <h2 className="text-lg font-bold text-brand-navy">Salas Activas</h2>
-              {rooms.map((room) => (
+              <h2 className="text-lg font-bold text-brand-navy">Mis Salas</h2>
+              {myRooms.map((room) => (
                 <div
                   key={room.id}
                   className="p-4 bg-gray-50 border-l-4 border-green-500 rounded-lg"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h3 className="font-bold text-brand-navy text-lg flex items-center gap-2">
-                        <Radio className="w-4 h-4 text-green-500 animate-pulse" />
-                        {room.name}
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-brand-navy text-lg flex items-center gap-2">
+                          <Radio className="w-4 h-4 text-green-500 animate-pulse" />
+                          {room.name}
+                        </h3>
+                        {room.isCreator && (
+                          <span className="text-xs bg-brand-red text-white px-2 py-1 rounded">
+                            Creador
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
                         <span>{room.area?.replace(/_/g, ' ')}</span>
                         <span className="font-bold text-green-600">
@@ -220,18 +298,30 @@ export default function SalasPage() {
                         </span>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleJoinRoom(room.id)}
-                      className="px-4 py-2 bg-brand-red text-white rounded-lg font-bold hover:bg-red-700 transition whitespace-nowrap ml-2"
-                    >
-                      Entrar
-                    </button>
+                    <div className="flex gap-2 ml-2">
+                      <button
+                        onClick={() => handleJoinRoom(room.id, room.name)}
+                        className="px-4 py-2 bg-brand-red text-white rounded-lg font-bold hover:bg-red-700 transition whitespace-nowrap"
+                      >
+                        Entrar
+                      </button>
+                      {room.isCreator && (
+                        <button
+                          onClick={() => handleDeleteRoom(room.id, room.name)}
+                          disabled={isDeleting}
+                          className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                          title="Eliminar sala"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-center text-gray-500 py-12">No hay salas activas en este momento</p>
+            <p className="text-center text-gray-500 py-12">No tienes salas aún. Crea una o únete a través de Explorar</p>
           )}
         </div>
       </main>

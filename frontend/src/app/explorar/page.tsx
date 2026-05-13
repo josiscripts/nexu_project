@@ -1,15 +1,17 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useSocket } from '@/contexts/SocketContext';
-import { searchAll, toggleFollow, getRooms, joinGroup, leaveGroup } from '@/services/user.service';
+import { searchAll, toggleFollow, getRooms, joinGroup, leaveGroup, joinRoom } from '@/services/user.service';
 import type { SearchResults, RoomInfo } from '@/services/user.service';
 import Navbar from '@/components/layout/Navbar';
 import { Loader2, Users, Radio, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function ExplorePage() {
+  const router = useRouter();
   const { token } = useAuthStore();
   const { socket } = useSocket();
   const [q, setQ] = useState('');
@@ -133,9 +135,19 @@ export default function ExplorePage() {
     }
   };
 
-  const handleJoinRoom = (roomId: string) => {
-    // Navigate to salas page and join room there
-    window.location.href = `/salas?join=${roomId}`;
+  const handleJoinRoom = async (e: React.MouseEvent, roomId: string) => {
+    e.preventDefault();
+    if (!token) return;
+
+    try {
+      await joinRoom(roomId, token);
+      // Navigate to room without reloading (client-side navigation)
+      router.push(`/salas?selected=${roomId}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error al unirse a la sala';
+      alert(message);
+      console.error('Join room error:', err);
+    }
   };
 
   return (
@@ -264,7 +276,7 @@ export default function ExplorePage() {
                           <p className="text-sm text-gray-600">{r.area?.replace(/_/g, ' ')}</p>
                           <p className="text-xs text-gray-500 mt-1">{r.userCount} usuario{r.userCount !== 1 ? 's' : ''} activo{r.userCount !== 1 ? 's' : ''}</p>
                         </div>
-                        <button onClick={() => handleJoinRoom(r.id)} className="px-4 py-2 rounded-lg font-medium bg-brand-red text-white hover:bg-red-700 transition">
+                        <button onClick={(e) => handleJoinRoom(e, r.id)} className="px-4 py-2 rounded-lg font-medium bg-brand-red text-white hover:bg-red-700 transition">
                           Unirse
                         </button>
                       </div>

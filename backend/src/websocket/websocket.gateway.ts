@@ -14,7 +14,7 @@ import { UnescoArea } from '@prisma/client';
 
 @WebSocketGateway({
   cors: {
-    origin: 'http://localhost:3001',
+    origin: true,
     credentials: true,
   },
   namespace: '/notifications',
@@ -36,11 +36,17 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     try {
       const user = client.data.user;
       if (!user) {
+        console.error('❌ [WebsocketGateway] Sin usuario en conexión');
         client.disconnect(true);
         return;
       }
 
       const userId = user.userId;
+
+      // IMPORTANTE: Registrar userId en el socket para referencia futura
+      client.data.userId = userId;
+      client.data.userEmail = user.email;
+      client.data.userName = user.name;
 
       // Track this socket for the user
       if (!this.connectedUsers.has(userId)) {
@@ -48,7 +54,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       }
       this.connectedUsers.get(userId)!.add(client.id);
 
-      console.log(`✅ Usuario conectado: ${user.email} (Socket: ${client.id})`);
+      console.log(`✅ [WebsocketGateway] Usuario conectado: ${user.email} (Socket: ${client.id}, UserId: ${userId})`);
 
       // Join user to their personal room
       client.join(`user:${userId}`);

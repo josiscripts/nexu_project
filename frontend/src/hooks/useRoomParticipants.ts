@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseAvailable } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 
 export interface Participant {
@@ -48,6 +48,11 @@ export function useRoomParticipants(roomId: string) {
     };
 
     loadParticipants();
+
+    if (!isSupabaseAvailable) {
+      console.warn('⚠️ Supabase no disponible - Realtime deshabilitado');
+      return;
+    }
 
     // Suscribirse a cambios en tiempo real via Supabase Realtime
     console.log(`🔄 [Supabase] Suscribiendo a cambios en RoomParticipant para sala: ${roomId}`);

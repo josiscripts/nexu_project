@@ -191,8 +191,8 @@ export default function ExplorePage() {
             </div>
           )}
 
-          {/* Resultados */}
-          {!isLoading && results && (
+          {/* Resultados de búsqueda */}
+          {!isLoading && results && q.trim() && (
             <div className="space-y-6">
               {/* Usuarios */}
               {(tab === 'todo' || tab === 'usuarios') && results.users.length > 0 && (
@@ -291,32 +291,39 @@ export default function ExplorePage() {
             </div>
           )}
 
-          {/* Cargar salas cuando no hay búsqueda */}
+          {/* Pantalla inicial o salas cuando no hay búsqueda */}
           {!q.trim() && !isLoading && (
             <div>
-              <h2 className="text-lg font-bold text-brand-navy mb-3">Salas Activas</h2>
-              {rooms.length > 0 ? (
-                <div className="grid gap-3">
-                  {rooms.map((r) => (
-                    <div
-                      key={r.id}
-                      className="p-4 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-between"
-                    >
-                      <div>
-                        <h3 className="font-bold text-brand-navy flex items-center gap-2">
-                          <Radio className="w-4 h-4 text-green-500" /> {r.name}
-                        </h3>
-                        <p className="text-sm text-gray-600">{r.area?.replace(/_/g, ' ')}</p>
-                        <p className="text-xs text-gray-500 mt-1">{r.userCount} usuario{r.userCount !== 1 ? 's' : ''}</p>
-                      </div>
-                      <button onClick={() => handleJoinRoom(r.id)} className="px-4 py-2 rounded-lg font-medium bg-brand-red text-white hover:bg-red-700 transition">
-                        Unirse
-                      </button>
+              {results === null && (
+                <p className="text-center text-gray-500 py-8">Comienza a buscar usuarios, grupos o salas...</p>
+              )}
+              {results !== null && (
+                <>
+                  <h2 className="text-lg font-bold text-brand-navy mb-3">Salas Activas</h2>
+                  {rooms.length > 0 ? (
+                    <div className="grid gap-3">
+                      {rooms.map((r) => (
+                        <div
+                          key={r.id}
+                          className="p-4 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-between"
+                        >
+                          <div>
+                            <h3 className="font-bold text-brand-navy flex items-center gap-2">
+                              <Radio className="w-4 h-4 text-green-500" /> {r.name}
+                            </h3>
+                            <p className="text-sm text-gray-600">{r.area?.replace(/_/g, ' ')}</p>
+                            <p className="text-xs text-gray-500 mt-1">{r.userCount} usuario{r.userCount !== 1 ? 's' : ''}</p>
+                          </div>
+                          <button onClick={() => handleJoinRoom(r.id)} className="px-4 py-2 rounded-lg font-medium bg-brand-red text-white hover:bg-red-700 transition">
+                            Unirse
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-center text-gray-500 py-8">No hay salas activas</p>
+                  ) : (
+                    <p className="text-center text-gray-500 py-8">No hay salas activas</p>
+                  )}
+                </>
               )}
             </div>
           )}

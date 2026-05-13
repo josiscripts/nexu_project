@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSocket } from '@/contexts/SocketContext';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseAvailable } from '@/lib/supabase';
 
 export interface ConnectionStatus {
   socketConnected: boolean;
@@ -17,6 +17,11 @@ export function useConnectionStatus(): ConnectionStatus {
   useEffect(() => {
     // Monitor Supabase Realtime connection
     const checkSupabaseConnection = async () => {
+      if (!isSupabaseAvailable) {
+        setSupabaseConnected(false);
+        return;
+      }
+
       try {
         // Try a simple query to verify auth works
         const { data, error } = await supabase.auth.getUser();

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, User } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
-import { useSocket } from '@/contexts/SocketContext';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useNotifications } from '@/hooks/useNotifications';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';

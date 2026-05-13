@@ -135,8 +135,7 @@ export default function ExplorePage() {
     }
   };
 
-  const handleJoinRoom = async (e: React.MouseEvent, roomId: string) => {
-    e.preventDefault();
+  const handleJoinRoom = async (roomId: string) => {
     if (!token) return;
 
     try {
@@ -276,7 +275,7 @@ export default function ExplorePage() {
                           <p className="text-sm text-gray-600">{r.area?.replace(/_/g, ' ')}</p>
                           <p className="text-xs text-gray-500 mt-1">{r.userCount} usuario{r.userCount !== 1 ? 's' : ''} activo{r.userCount !== 1 ? 's' : ''}</p>
                         </div>
-                        <button onClick={(e) => handleJoinRoom(e, r.id)} className="px-4 py-2 rounded-lg font-medium bg-brand-red text-white hover:bg-red-700 transition">
+                        <button onClick={() => handleJoinRoom(r.id)} className="px-4 py-2 rounded-lg font-medium bg-brand-red text-white hover:bg-red-700 transition">
                           Unirse
                         </button>
                       </div>

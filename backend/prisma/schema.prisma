@@ -24,6 +24,8 @@ model User {
   hostedRooms         Room[]
   hostedGroups        Group[]         @relation("hostedGroups")
   groupMemberships    GroupMember[]
+  groupPosts          GroupPost[]
+  groupEvents         GroupEvent[]
   roomParticipations  RoomParticipant[]
 }
 
@@ -160,19 +162,67 @@ model Group {
   id          String        @id @default(uuid())
   name        String
   description String?
+  bannerUrl   String?
   area        UnescoArea
-  hostId      String
+  creatorId   String
   createdAt   DateTime      @default(now())
-  host        User          @relation("hostedGroups", fields: [hostId], references: [id])
+  updatedAt   DateTime      @updatedAt
+  creator     User          @relation("hostedGroups", fields: [creatorId], references: [id], onDelete: Cascade)
   members     GroupMember[]
+  posts       GroupPost[]
+  events      GroupEvent[]
+
+  @@index([creatorId])
 }
 
 model GroupMember {
+  id        String    @id @default(uuid())
   userId    String
   groupId   String
-  joinedAt  DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  role      String    @default("MEMBER")
+  points    Int       @default(0)
+  joinedAt  DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
-  @@id([userId, groupId])
+  @@unique([userId, groupId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model GroupPost {
+  id        String    @id @default(uuid())
+  content   String
+  images    String[]
+  groupId   String
+  authorId  String
+  parentId  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent    GroupPost? @relation("PostReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   GroupPost[] @relation("PostReplies")
+
+  @@index([groupId])
+  @@index([authorId])
+  @@index([parentId])
+}
+
+model GroupEvent {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  bannerUrl   String?
+  startDate   DateTime
+  isVirtual   Boolean   @default(false)
+  groupId     String
+  creatorId   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  creator     User      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+  @@index([creatorId])
 }

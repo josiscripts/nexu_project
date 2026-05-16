@@ -48,7 +48,10 @@ export default function LoginPage() {
     try {
       const data = await loginUser(email, password);
       setAuth(data.user, data.access_token);
-      // HttpOnly cookie is automatically set by the backend
+      
+      // Sincronizar la cookie para el middleware de Next.js
+      document.cookie = `nexu-token=${data.access_token}; path=/; max-age=86400; SameSite=Lax`;
+      
       router.push("/social");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesión");
@@ -70,7 +73,10 @@ export default function LoginPage() {
         area: registerArea
       });
       setAuth(data.user, data.access_token);
-      // HttpOnly cookie is automatically set by the backend
+      
+      // Sincronizar la cookie para el middleware de Next.js
+      document.cookie = `nexu-token=${data.access_token}; path=/; max-age=86400; SameSite=Lax`;
+      
       router.push("/social");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al crear la cuenta");
@@ -90,6 +96,8 @@ export default function LoginPage() {
       console.error('Error logging out:', err);
     }
     logoutAction();
+    // Limpiar la cookie del middleware
+    document.cookie = "nexu-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     setStep("welcome");
   };
 

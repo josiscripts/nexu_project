@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, MaxLength, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, MaxLength, IsEnum, IsUrl } from 'class-validator';
 import { UnescoArea } from '@prisma/client';
 
 export class CreateGroupDto {
@@ -11,6 +11,10 @@ export class CreateGroupDto {
   @IsOptional()
   @MaxLength(300)
   description?: string;
+
+  @IsUrl()
+  @IsOptional()
+  bannerUrl?: string;
 
   @IsEnum(UnescoArea)
   @IsNotEmpty()

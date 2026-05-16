@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { GroupsService } from './groups.service';
 import { CreateGroupDto } from './dto/create-group.dto';
+import { CreatePostDto } from './dto/create-post.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('groups')
@@ -45,5 +46,30 @@ export class GroupsController {
   async leave(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     const userId = req.user.userId;
     return this.groupsService.leave(id, userId);
+  }
+
+  @Post(':groupId/posts')
+  async createPost(
+    @Param('groupId', ParseUUIDPipe) groupId: string,
+    @Body() dto: CreatePostDto,
+    @Request() req: any,
+  ) {
+    const authorId = req.user.userId;
+    return this.groupsService.createPost(groupId, authorId, dto);
+  }
+
+  @Get(':groupId/posts')
+  async getGroupPosts(@Param('groupId', ParseUUIDPipe) groupId: string) {
+    return this.groupsService.getGroupPosts(groupId);
+  }
+
+  @Delete(':groupId/posts/:postId')
+  async deletePost(
+    @Param('groupId', ParseUUIDPipe) groupId: string,
+    @Param('postId', ParseUUIDPipe) postId: string,
+    @Request() req: any,
+  ) {
+    const userId = req.user.userId;
+    return this.groupsService.deletePost(postId, groupId, userId);
   }
 }

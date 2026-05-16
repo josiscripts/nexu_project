@@ -113,4 +113,73 @@ export class GroupsService {
 
     return this.findOne(groupId);
   }
+
+  async createPost(groupId: string, authorId: string, data: any) {
+    const member = await this.prisma.groupMember.findUnique({
+      where: { userId_groupId: { groupId, userId: authorId } },
+    });
+
+    if (!member) throw new ForbiddenException('Not a member of this group');
+
+    const post = await this.prisma.groupPost.create({
+      data: {
+        content: data.content,
+        images: data.images || [],
+        groupId,
+        authorId,
+        parentId: data.parentId,
+      },
+      include: {
+        author: { select: { id: true, name: true } },
+        replies: {
+          include: { author: { select: { id: true, name: true } } },
+        },
+      },
+    });
+
+    const group = await this.findOne(groupId);
+    this.websocketGateway.emitToArea(group.area, 'group:post-created', {
+      groupId,
+      post,
+    });
+
+    return post;
+  }
+
+  async getGroupPosts(groupId: string) {
+    const posts = await this.prisma.groupPost.findMany({
+      where: { groupId, parentId: null },
+      include: {
+        author: { select: { id: true, name: true } },
+        replies: {
+          include: { author: { select: { id: true, name: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return posts;
+  }
+
+  async deletePost(postId: string, groupId: string, userId: string) {
+    const post = await this.prisma.groupPost.findUnique({
+      where: { id: postId },
+    });
+
+    if (!post) throw new NotFoundException('Post not found');
+    if (post.authorId !== userId) throw new ForbiddenException('Cannot delete this post');
+
+    await this.prisma.groupPost.delete({
+      where: { id: postId },
+    });
+
+    const group = await this.findOne(groupId);
+    this.websocketGateway.emitToArea(group.area, 'group:post-deleted', {
+      groupId,
+      postId,
+    });
+
+    return { success: true };
+  }
 }
